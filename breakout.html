@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Atari Breakout with Phaser - Enhanced Version</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+</head>
+<body>
+    <script>
+        var config = {
+            type: Phaser.AUTO,
+            width: 850,
+            height: 600,
+            backgroundColor: '#2d2d2d',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 },
+                    debug: false
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        var game = new Phaser.Game(config);
+
+        var paddle;
+        var ball;
+        var bricks;
+        var cursors;
+        var score = 0;
+        var scoreText;
+        var lives = 3;
+        var livesText;
+        var gameStarted = false;
+        var gameOver = false;
+        var gameOverText;
+        var ballInitialSpeed = 250; // Increased initial speed
+        var paddleSpeed = 500;      // Increased paddle speed
+
+        function preload() {
+            // Create paddle image
+            var paddleGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            paddleGraphics.fillStyle(0xffffff, 1);
+            paddleGraphics.fillRect(0, 0, 100, 20);
+            paddleGraphics.generateTexture('paddle', 100, 20);
+
+            // Create ball image
+            var ballGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+            ballGraphics.fillStyle(0xffffff, 1);
+            ballGraphics.fillCircle(10, 10, 10);
+            ballGraphics.generateTexture('ball', 20, 20);
+
+            // Create brick images
+            this.brickColors = [0xff0000, 0xffff00, 0x00ff00, 0x0000ff];
+            this.brickWidth = 50;
+            this.brickHeight = 20;
+
+            for (var i = 0; i < this.brickColors.length; i++) {
+                var color = this.brickColors[i];
+                var brickGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+                brickGraphics.fillStyle(color, 1);
+                brickGraphics.fillRect(0, 0, this.brickWidth, this.brickHeight);
+                brickGraphics.generateTexture('brick' + i, this.brickWidth, this.brickHeight);
+            }
+        }
+
+        function create() {
+            // Create the paddle
+            paddle = this.physics.add.sprite(config.width / 2, config.height - 50, 'paddle').setImmovable();
+            paddle.body.allowGravity = false;
+            paddle.setCollideWorldBounds(true);
+
+            // Create the ball
+            ball = this.physics.add.sprite(config.width / 2, config.height - 70, 'ball');
+            ball.setCollideWorldBounds(true);
+            ball.setBounce(1);
+            ball.body.onWorldBounds = true;
+
+            // Create the bricks
+            bricks = this.physics.add.staticGroup();
+
+            var offsetX = 65;
+            var offsetY = 50;
+            var cols = 14;
+            var rows = 4;
+
+            for (var row = 0; row < rows; row++) {
+                for (var col = 0; col < cols; col++) {
+                    var brickX = offsetX + col * (this.brickWidth + 5);
+                    var brickY = offsetY + row * (this.brickHeight + 5);
+
+                    var brick = bricks.create(brickX, brickY, 'brick' + row).setImmovable();
+                }
+            }
+
+            // Add collision between ball and paddle
+            this.physics.add.collider(ball, paddle, hitPaddle, null, this);
+
+            // Add collision between ball and bricks
+            this.physics.add.collider(ball, bricks, hitBrick, null, this);
+
+            // Enable cursor keys
+            cursors = this.input.keyboard.createCursorKeys();
+
+            // Display score and lives
+            scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '20px', fill: '#ffffff' });
+            livesText = this.add.text(700, 16, 'Lives: 3', { fontSize: '20px', fill: '#ffffff' });
+
+            // Input handling for spacebar
+            this.input.keyboard.on('keydown-SPACE', function () {
+                if (gameOver) {
+                    // Restart the game
+                    this.scene.restart();
+                    score = 0;
+                    lives = 3;
+                    gameOver = false;
+                    gameStarted = false;
+                } else if (!gameStarted) {
+                    // Start the game
+                    ball.setVelocity(Phaser.Math.Between(-ballInitialSpeed, ballInitialSpeed), -ballInitialSpeed);
+                    gameStarted = true;
+                    if (gameOverText) {
+                        gameOverText.destroy();
+                    }
+                    if (instructionText) {
+                        instructionText.destroy();
+                    }
+                }
+            }, this);
+        }
+
+        function update() {
+            // Move paddle
+            if (cursors.left.isDown) {
+                paddle.setVelocityX(-paddleSpeed);
+            } else if (cursors.right.isDown) {
+                paddle.setVelocityX(paddleSpeed);
+            } else {
+                paddle.setVelocityX(0);
+            }
+
+            // Keep paddle within bounds
+            if (paddle.x < paddle.width / 2) {
+                paddle.x = paddle.width / 2;
+            } else if (paddle.x > config.width - paddle.width / 2) {
+                paddle.x = config.width - paddle.width / 2;
+            }
+
+            // Ball follows paddle before game starts
+            if (!gameStarted) {
+                ball.setX(paddle.x);
+                ball.setY(paddle.y - 20);
+            }
+
+            // Check for ball going out of bounds
+            if (ball.y > (config.height - 20)) {
+                loseLife.call(this);
+            }
+        }
+
+        function hitPaddle(ball, paddle) {
+            // Calculate difference between ball and paddle
+            var diff = 0;
+
+            if (ball.x < paddle.x) {
+                // Ball is on the left-hand side of paddle
+                diff = paddle.x - ball.x;
+                ball.body.velocity.x = (-10 * diff);
+            } else if (ball.x > paddle.x) {
+                // Ball is on the right-hand side of paddle
+                diff = ball.x - paddle.x;
+                ball.body.velocity.x = (10 * diff);
+            } else {
+                // Ball is perfectly in the middle
+                // Add a little random to prevent straight vertical bounce
+                ball.body.velocity.x = 2 + Math.random() * 8;
+            }
+
+            // Ensure ball's velocity.y is upward
+            ball.body.velocity.y = -Math.abs(ball.body.velocity.y);
+        }
+
+        function hitBrick(ball, brick) {
+            brick.disableBody(true, true);
+
+            score += 10;
+            scoreText.setText('Score: ' + score);
+
+            // Check if all bricks are destroyed
+            if (bricks.countActive() === 0) {
+                // Won the game
+                gameOver = true;
+                gameStarted = false;
+                ball.disableBody(true, true);
+
+                gameOverText = this.add.text(config.width / 2, config.height / 2, 'YOU WON!\nClick to Restart', { fontSize: '40px', fill: '#ffffff', align: 'center' });
+                gameOverText.setOrigin(0.5);
+            }
+        }
+
+      function loseLife() {
+          lives--;
+          livesText.setText('Lives: ' + lives);
+
+          // Make the paddle go red
+          paddle.setTint(0xff0000);
+
+          // Define start and end colors for the tween
+          var startColor = Phaser.Display.Color.ValueToColor(0xff0000);
+          var endColor = Phaser.Display.Color.ValueToColor(0xffffff);
+
+          if (lives > 0) {
+              gameStarted = false;
+              ball.setVelocity(0);
+              ball.setPosition(paddle.x, paddle.y - 20);
+
+              // After 1 second, fade the paddle back to white
+              this.time.delayedCall(1000, function () {
+                  this.tweens.add({
+                      targets: { t: 0 },
+                      t: 1,
+                      duration: 1000, // Duration of the fade effect (1 second)
+                      onUpdate: function (tween, target) {
+                          var t = target.t;
+
+                          // Interpolate between red and white
+                          var colorObject = Phaser.Display.Color.Interpolate.ColorWithColor(startColor, endColor, 1, t);
+
+                          // Convert the interpolated color to a hex value
+                          var color = Phaser.Display.Color.GetColor(colorObject.r, colorObject.g, colorObject.b);
+
+                          // Set the paddle's tint to the interpolated color
+                          paddle.setTint(color);
+                      },
+                      onComplete: function () {
+                          // Clear the tint after the fade effect is complete
+                          paddle.clearTint();
+                      },
+                      onCompleteScope: this
+                  });
+              }, [], this);
+
+          } else {
+              // Game over
+              gameOver = true;
+              gameStarted = false;
+              ball.disableBody(true, true);
+
+              // Display "GAME OVER" message
+              gameOverText = this.add.text(config.width / 2, config.height / 2, 'GAME OVER\nClick to Restart', {
+                  fontSize: '40px',
+                  fill: '#ffffff',
+                  align: 'center'
+              });
+              gameOverText.setOrigin(0.5);
+
+              // Clear the paddle tint when the game is over
+              paddle.clearTint();
+          }
+      }
+
+    </script>
+</body>
+</html>
